@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#10243a">
+<title>信用買い分析</title>
+<style>
+:root{--navy:#10243a;--blue:#27689d;--red:#c23b55;--gold:#c18a36;--bg:#f3f6f9;--card:#fff;--muted:#64748b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#172536;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
+header{background:var(--navy);color:white;padding:18px 16px 16px;position:sticky;top:0;z-index:5;box-shadow:0 2px 8px #0002}
+h1{font-size:19px;margin:0 0 4px}header p{font-size:12px;color:#d7e3ee;margin:0}
+main{max-width:920px;margin:auto;padding:12px}
+.panel{background:var(--card);border-radius:14px;padding:14px;margin:0 0 12px;box-shadow:0 1px 5px #10243a12}
+h2{font-size:15px;margin:0 0 12px}.row{display:flex;gap:8px;align-items:end}.row>*{flex:1;min-width:0}
+label{font-size:12px;color:var(--muted);display:block;margin:0 0 5px}
+input,select,button{font:inherit;border-radius:9px;border:1px solid #cbd5e1;padding:11px;background:white;width:100%;min-height:42px}
+button{background:var(--blue);color:white;border:0;font-weight:650;cursor:pointer}
+button.secondary{background:#e7eef5;color:#1d405f}
+.small{font-size:11px;color:var(--muted);line-height:1.55}
+.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.metric{background:#f5f8fb;border-radius:10px;padding:11px}.metric span{display:block;color:var(--muted);font-size:11px}.metric strong{font-size:19px;display:block;margin-top:3px;overflow-wrap:anywhere}
+canvas{width:100%;height:190px;display:block}
+.chartbox{height:205px}
+.filegrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.filebox{background:#f6f8fa;border-radius:10px;padding:9px}
+.filebox input{font-size:11px;padding:8px;min-height:auto}
+.notice{background:#fff7e6;border:1px solid #f0d8a5;border-radius:10px;padding:10px;font-size:12px;line-height:1.55}
+.tabs{display:flex;gap:6px;overflow:auto;margin:0 0 12px}
+.tabs button{white-space:nowrap;width:auto;min-height:36px;padding:7px 12px}
+.hidden{display:none}
+footer{padding:8px 4px 28px;color:#64748b;font-size:11px;line-height:1.6}
+@media(min-width:650px){.metrics{grid-template-columns:repeat(4,1fr)}.filegrid{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<header><h1>日本株・信用買い分析</h1><p>Android対応｜CSV取込・建値推定・追証シミュレーション</p></header>
+<main>
+<section class="panel">
+<h2>銘柄・株価・試算条件</h2>
+<div class="row">
+<div><label>銘柄コード</label><input id="code" value="9984" inputmode="decimal" placeholder="例 9984 / 285A"></div>
+<div><label>現在株価（円）</label><input id="price" type="number" inputmode="decimal" value="3025"></div>
+</div>
+<div class="row" style="margin-top:9px">
+<div><label>委託保証金率（%）</label><input id="marginRate" type="number" value="30"></div>
+<div><label>維持率の仮定（%）</label><input id="maintRate" type="number" value="20"></div>
+</div>
+<div style="margin-top:9px"><button id="calc">分析を更新</button></div>
+<p class="small">株価は初期値です。最新値は証券会社アプリ等で確認して入力してください。CSVに株価履歴を含めると推移グラフを表示できます。</p>
+</section>
+
+<section class="panel">
+<h2>データをスマホから読み込む</h2>
+<div class="filegrid">
+<div class="filebox"><label>① 建玉・売買履歴CSV</label><input id="tradesFile" type="file" accept=".csv,text/csv"></div>
+<div class="filebox"><label>② 信用残高CSV</label><input id="marginFile" type="file" accept=".csv,text/csv"></div>
+<div class="filebox"><label>③ 日証金CSV</label><input id="jsfFile" type="file" accept=".csv,text/csv"></div>
+<div class="filebox"><label>④ 株価履歴CSV（任意）</label><input id="priceFile" type="file" accept=".csv,text/csv"></div>
+</div>
+<p class="small">ファイルはこのブラウザ内で読み込みます。サーバーへ送信しません。CSVの列名は同梱の説明書・テンプレートを参照してください。</p>
+</section>
+
+<section class="panel">
+<h2>現在の分析結果</h2>
+<div class="metrics">
+<div class="metric"><span>現在株価</span><strong id="mPrice">¥3,025</strong></div>
+<div class="metric"><span>推定平均建値</span><strong id="mAvg">データ待ち</strong></div>
+<div class="metric"><span>含み損益率</span><strong id="mPct">データ待ち</strong></div>
+<div class="metric"><span>含み損益額</span><strong id="mPnl">データ待ち</strong></div>
+<div class="metric"><span>信用買い残高</span><strong id="mBalance">データ待ち</strong></div>
+<div class="metric"><span>建玉数量</span><strong id="mQty">データ待ち</strong></div>
+<div class="metric"><span>概算追加入金額</span><strong id="mDeposit">データ待ち</strong></div>
+<div class="metric"><span>分析銘柄</span><strong id="mCode">9984</strong></div>
+</div>
+</section>
+
+<section class="panel"><h2>① 株価と信用買いの推定平均建値</h2><div class="chartbox"><canvas id="priceChart"></canvas></div></section>
+<section class="panel"><h2>② 信用買い残高の推移</h2><div class="chartbox"><canvas id="balanceChart"></canvas></div></section>
+<section class="panel"><h2>③ 直近20営業日の新規・返済（日証金）</h2><div class="chartbox"><canvas id="jsfChart"></canvas></div></section>
+<section class="panel"><h2>④ 推定含み損益率</h2><div class="chartbox"><canvas id="pnlChart"></canvas></div></section>
+<section class="panel"><h2>⑤ 推定追加入金額</h2><div class="chartbox"><canvas id="depositChart"></canvas></div></section>
+<section class="panel"><h2>⑥ 建値帯ごとの建玉割合</h2><div class="chartbox"><canvas id="bandsChart"></canvas></div></section>
+<section class="panel"><h2>⑦ 株価別の評価損益ストレス分析</h2><div class="chartbox"><canvas id="stressChart"></canvas></div></section>
+
+<section class="panel">
+<h2>CSVテンプレート</h2>
+<div class="row">
+<button class="secondary" onclick="downloadTemplate('trades')">建玉履歴</button>
+<button class="secondary" onclick="downloadTemplate('margin')">信用残高</button>
+</div>
+<div class="row" style="margin-top:8px">
+<button class="secondary" onclick="downloadTemplate('jsf')">日証金</button>
+<button class="secondary" onclick="downloadTemplate('prices')">株価履歴</button>
+</div>
+</section>
+
+<div class="notice"><b>重要：</b>日証金の貸借取引残高は市場全体の信用買い残高ではなく、個々の投資家の平均建値も分かりません。平均建値は証券会社の自分の建玉・約定履歴から計算します。追加入金額・追証価格は入力条件に基づく概算で、証券会社の正式判定ではありません。</div>
+<footer>データは端末内で処理します。ブラウザのデータ消去や端末変更で読み込んだ情報が失われる場合があります。正式な取引・追証判定は証券会社の口座画面と規定を優先してください。</footer>
+</main>
+<script>
+const state={trades:[],margin:[],jsf:[],prices:[]};
+const $=id=>document.getElementById(id);
+function parseCSV(text){
+ const lines=text.replace(/^\uFEFF/,'').trim().split(/\r?\n/); if(lines.length<2)return [];
+ const split=s=>{let a=[],v='',q=false;for(let i=0;i<s.length;i++){let c=s[i];if(c==='"'){if(q&&s[i+1]==='"'){v+='"';i++}else q=!q}else if(c===','&&!q){a.push(v);v=''}else v+=c}a.push(v);return a};
+ const heads=split(lines[0]).map(x=>x.trim());
+ return lines.slice(1).map(l=>{let vals=split(l),o={};heads.forEach((h,i)=>o[h]=(vals[i]||'').trim());return o});
+}
+function num(x){return Number(String(x??'').replace(/[,¥￥\s]/g,''))}
+function dateVal(x){let d=new Date(x);return isNaN(d)?null:d}
+async function loadFile(id,key){let f=$(id).files[0];if(!f)return;state[key]=parseCSV(await f.text());render();alert(f.name+' を読み込みました（'+state[key].length+'行）');}
+$('tradesFile').addEventListener('change',()=>loadFile('tradesFile','trades'));
+$('marginFile').addEventListener('change',()=>loadFile('marginFile','margin'));
+$('jsfFile').addEventListener('change',()=>loadFile('jsfFile','jsf'));
+$('priceFile').addEventListener('change',()=>loadFile('priceFile','prices'));
+function calcPosition(){
+ let rows=state.trades.map(r=>({...r,_d:dateVal(r.date),_q:Math.abs(num(r.quantity)),_p:num(r.price)})).filter(r=>r._d&&r._q>0).sort((a,b)=>a._d-b._d);
+ let qty=0,cost=0,history=[];
+ for(let r of rows){let s=(r.side||'').toLowerCase();
+  if(['buy','買','新規買','買建','open'].includes(s)){qty+=r._q;cost+=r._q*r._p}
+  else if(['sell','返済売','返済','close','決済'].includes(s)&&qty>0){let avg=cost/qty,close=Math.min(qty,r._q);qty-=close;cost-=avg*close}
+  history.push({date:r._d,qty,avg:qty>0?cost/qty:null});
+ }
+ return {qty,avg:qty>0?cost/qty:null,history};
+}
+function yen(x){return x==null||!isFinite(x)?'—':'¥'+Math.round(x).toLocaleString('ja-JP')}
+function draw(id,series,opts={}){
+ const c=$(id),rect=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1,w=Math.max(280,rect.width),h=190;
+ c.width=w*dpr;c.height=h*dpr;let ctx=c.getContext('2d');ctx.scale(dpr,dpr);ctx.clearRect(0,0,w,h);
+ let vals=series.flatMap(s=>s.data.map(p=>p.y)).filter(Number.isFinite);
+ if(!vals.length){ctx.fillStyle='#8190a0';ctx.font='12px sans-serif';ctx.fillText('対応するCSVデータを読み込むと表示されます',8,90);return}
+ let min=Math.min(0,...vals),max=Math.max(1,...vals);if(min===max)max=min+1;
+ let L=42,R=8,T=12,B=28,pw=w-L-R,ph=h-T-B;
+ ctx.strokeStyle='#e5eaf0';ctx.fillStyle='#687789';ctx.font='10px sans-serif';ctx.lineWidth=1;
+ for(let i=0;i<4;i++){let y=T+ph*i/3;ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(w-R,y);ctx.stroke();ctx.fillText((max-(max-min)*i/3).toLocaleString('ja-JP',{maximumFractionDigits:1}),2,y+3)}
+ series.forEach((s,si)=>{ctx.strokeStyle=s.color||['#286b9f','#c13c55','#c18a36'][si%3];ctx.fillStyle=ctx.strokeStyle;ctx.lineWidth=2;let pts=s.data.filter(p=>Number.isFinite(p.y));ctx.beginPath();pts.forEach((p,i)=>{let x=L+(pts.length<=1?0:i*pw/(pts.length-1)),y=T+(max-p.y)*ph/(max-min);if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();ctx.fillText(s.name, L+si*105, h-7)});
+}
+function render(){
+ let price=num($('price').value),code=$('code').value||'—',pos=calcPosition();
+ $('mPrice').textContent=yen(price);$('mCode').textContent=code;
+ $('mAvg').textContent=pos.avg?yen(pos.avg):'データ待ち';$('mQty').textContent=pos.qty?pos.qty.toLocaleString()+'株':'データ待ち';
+ let pct=pos.avg?(price/pos.avg-1)*100:null,pnl=pos.avg?(price-pos.avg)*pos.qty:null;
+ $('mPct').textContent=pct==null?'データ待ち':pct.toFixed(1)+'%';$('mPnl').textContent=pnl==null?'データ待ち':yen(pnl);
+ let m=state.margin.filter(r=>r.date&&r.margin_buy_shares!==undefined).map(r=>({x:r.date,y:num(r.margin_buy_shares)})).filter(p=>Number.isFinite(p.y));
+ $('mBalance').textContent=m.length?Math.round(m[m.length-1].y).toLocaleString()+'株':'データ待ち';
+ let mr=num($('marginRate').value)/100,maint=num($('maintRate').value)/100;
+ let notional=price*pos.qty, equity=notional*mr+(pnl||0),required=notional*maint,deposit=Math.max(0,required-equity);
+ $('mDeposit').textContent=pos.qty?yen(deposit):'データ待ち';
+ let priceSeries=state.prices.map(r=>({x:r.date,y:num(r.close)})).filter(p=>p.x&&Number.isFinite(p.y));
+ if(!priceSeries.length)priceSeries=[{x:'現在',y:price}];
+ let avgSeries=pos.history.filter(p=>p.avg).map(p=>({x:p.date,y:p.avg}));
+ draw('priceChart',[{name:'株価',data:priceSeries,color:'#8b9299'},{name:'平均建値',data:avgSeries,color:'#286b9f'}]);
+ draw('balanceChart',[{name:'信用買い残高（株）',data:m,color:'#333333'}]);
+ let js=state.jsf.slice(-20);
+ draw('jsfChart',[{name:'融資新規',data:js.map(r=>({x:r.date,y:num(r.new_financing)})),color:'#286b9f'},{name:'返済',data:js.map(r=>({x:r.date,y:-Math.abs(num(r.repayment))})),color:'#c18a36'}]);
+ draw('pnlChart',[{name:'含み損益率（%）',data:pos.history.filter(p=>p.avg).map(p=>({x:p.date,y:(price/p.avg-1)*100})),color:'#c13c55'}]);
+ draw('depositChart',[{name:'概算追加入金（円）',data:pos.history.filter(p=>p.avg).map(p=>({x:p.date,y:Math.max(0,(price*p.qty*maint)-(price*p.qty*mr+(price-p.avg)*p.qty))})),color:'#c13c55'}]);
+ let buys=state.trades.filter(r=>['buy','買','新規買','買建','open'].includes((r.side||'').toLowerCase())).map(r=>({p:num(r.price),q:num(r.quantity)})).filter(r=>r.p>0&&r.q>0);
+ draw('bandsChart',[{name:'買建数量（株）',data:buys.map((r,i)=>({x:i,y:r.q})),color:'#8b4bb5'}]);
+ let stress=Array.from({length:21},(_,i)=>price*(.5+i*.05));
+ draw('stressChart',[{name:'評価損益（円）',data:stress.map(p=>({x:p,y:pos.avg?(p-pos.avg)*pos.qty:0})),color:'#8b4bb5'}]);
+}
+$('calc').addEventListener('click',render);['price','code','marginRate','maintRate'].forEach(id=>$(id).addEventListener('change',render));
+window.addEventListener('resize',render);
+function downloadTemplate(kind){
+ const data={
+ trades:'date,side,quantity,price\n2026-01-05,buy,100,1500\n2026-01-20,buy,100,1550\n2026-02-03,sell,50,1600\n',
+ margin:'date,margin_buy_shares,margin_sell_shares\n2026-01-05,100000,20000\n',
+ jsf:'date,financing_balance,loan_balance,new_financing,repayment\n2026-01-05,100000,20000,10000,5000\n',
+ prices:'date,close,volume\n2026-01-05,1500,1000000\n2026-01-06,1520,1100000\n'};
+ const blob=new Blob(['\uFEFF'+data[kind]],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=kind+'_template.csv';a.click();URL.revokeObjectURL(a.href);
+}
+render();
+</script>
+</body></html>
